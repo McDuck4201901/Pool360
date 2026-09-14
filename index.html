@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sanitize — Pool Intelligence</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='19' font-size='20'%3E%F0%9F%92%A7%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app"></div>
+
+<!-- Charting -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<!-- Supabase JS client — only used when config.js sets window.SANITIZE_CONFIG.supabaseUrl / supabaseAnonKey.
+     Without a config.js, the app runs entirely on the built-in demo dataset (see data.js). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<!-- Local config: edit config.js and fill in your Supabase project's URL + anon key.
+     The anon key is safe to expose in client code — it is public by design, and access is enforced
+     server-side by Postgres Row Level Security (see supabase/schema.sql). Leave both blank to run
+     entirely on the built-in demo dataset. -->
+<script src="config.js"></script>
+
+<script src="supabaseClient.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
