@@ -27,13 +27,16 @@ staff logging/backend is a separate, not-yet-built Part 2).
 **Just want to look at it?** Open `index.html` in a browser (or use the live
 demo link above) — it runs entirely on a built-in simulated dataset, no setup
 needed. Three sample accounts on the login screen: a private owner (1 pool,
-running a simpler custom parameter set with no ORP/salinity), a hotel manager
-(2 pools, one with an active low-chlorine alert to show off the alert/forecast
-flow), and an Admin (read-only "Parameter sets" screen — every threshold set
-in the system, and which pools use it).
+running a simpler custom parameter set with no ORP/salinity), a Hospitality
+Group manager (2 hotels, 3 pools total, one with an active low-chlorine alert
+to show off the alert/forecast flow), and an Admin (read-only "Parameter
+sets" and "Recent activity" screens).
 
 **Want it running with a real backend, real logins, and eventually real
 sensors?** Start with `docs/DEPLOY_AND_DEMO.md`.
+
+**Changing the health-scoring logic?** `test/scoring.test.js` covers it —
+run `npm test` (or `node --test`, no install needed).
 
 ## How it's built
 

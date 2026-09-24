@@ -527,3 +527,9 @@ function statusLine(pool){
   }
   return {text:t("statusService"), sub:t("scheduledFor",{date:fmtDate(nextScheduledDate(pool))})};
 }
+
+// Node-only export for the test suite (test/scoring.test.js) — no-op in the
+// browser, where `module` doesn't exist. Doesn't change runtime behavior.
+if(typeof module!=="undefined" && module.exports){
+  module.exports = { DEFAULT_PARAMS: DEFAULT_PARAMS, paramByKey: paramByKey, paramTierInfo: paramTierInfo, paramStatus: paramStatus, paramScore: paramScore, poolHealth: poolHealth, poolAlerts: poolAlerts, scoreTier: scoreTier };
+}

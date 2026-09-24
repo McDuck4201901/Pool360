@@ -1,0 +1,8 @@
+{
+  "name": "sanitize-pool-dashboard",
+  "private": true,
+  "description": "Pool chemical monitoring dashboard — static app, no build step. See README.md.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
