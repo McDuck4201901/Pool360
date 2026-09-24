@@ -1,8 +1,12 @@
 -- ============================================================================
 -- Sanitize Pool Intelligence — database schema (Supabase / Postgres)
 -- ============================================================================
--- Run this once against a fresh Supabase project:
---   Dashboard -> SQL Editor -> New query -> paste this whole file -> Run
+-- Run against a fresh Supabase project (Dashboard -> SQL Editor -> New query
+-- -> paste this whole file -> Run). Safe to re-run against an
+-- already-provisioned project too — every statement is idempotent (tables
+-- via IF NOT EXISTS, policies via DROP...IF EXISTS + CREATE, reference data
+-- via ON CONFLICT DO NOTHING) — this is how you pick up schema changes on an
+-- existing project rather than diffing them by hand.
 --
 -- Mirrors the data model in the spec (01_customer_dashboard_spec.pdf, section 4):
 --   Account -> Property -> Pool -> Visit -> Reading
@@ -295,18 +299,22 @@ alter table public.readings            enable row level security;
 alter table public.audit_events        enable row level security;
 
 -- profiles: a user can read (and update their own display name on) only their own row.
+drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own" on public.profiles
   for select using (id = auth.uid());
+drop policy if exists "profiles_update_own" on public.profiles;
 create policy "profiles_update_own" on public.profiles
   for update using (id = auth.uid());
 
 -- hospitality_groups: only your own group's row (just the name — needed to
 -- label the account context in the UI for a group-scoped manager).
+drop policy if exists "hospitality_groups_select_own" on public.hospitality_groups;
 create policy "hospitality_groups_select_own" on public.hospitality_groups
   for select using (id = public.auth_group_id() or public.is_admin());
 
 -- properties: the account's own directly-owned property, or every property
 -- under the account's hospitality group when it's scoped to one.
+drop policy if exists "properties_select_own" on public.properties;
 create policy "properties_select_own" on public.properties
   for select using (account_id = auth.uid() or group_id = public.auth_group_id());
 
@@ -316,21 +324,26 @@ create policy "properties_select_own" on public.properties
 -- Admins additionally see every pool's id/name/parameter_set_id (not its
 -- visits/readings/billing) so the "Parameter sets" admin screen can show
 -- which pools use a custom set.
+drop policy if exists "pools_select_own" on public.pools;
 create policy "pools_select_own" on public.pools
   for select using (id in (select public.auth_pool_ids()));
+drop policy if exists "pools_select_admin" on public.pools;
 create policy "pools_select_admin" on public.pools
   for select using (public.is_admin());
 
 -- properties: same idea — admins can see property name/location (needed to
 -- label a pool in the admin view), not the account's operational history.
+drop policy if exists "properties_select_admin" on public.properties;
 create policy "properties_select_admin" on public.properties
   for select using (public.is_admin());
 
 -- technicians & products are shared reference data, readable by any signed-in
 -- customer (needed to display a technician's name / a product's name on a
 -- visit) but never writable from the customer dashboard.
+drop policy if exists "technicians_select_authenticated" on public.technicians;
 create policy "technicians_select_authenticated" on public.technicians
   for select using (auth.role() = 'authenticated');
+drop policy if exists "products_select_authenticated" on public.products;
 create policy "products_select_authenticated" on public.products
   for select using (auth.role() = 'authenticated');
 
@@ -340,8 +353,10 @@ create policy "products_select_authenticated" on public.products
 -- an insert/update/delete policy yet — defining/editing a custom set is a
 -- direct-database task for now (see docs/PARAMETERS.md), matching the
 -- "Admins can view, not edit yet" scope for this round.
+drop policy if exists "parameter_sets_select_authenticated" on public.parameter_sets;
 create policy "parameter_sets_select_authenticated" on public.parameter_sets
   for select using (auth.role() = 'authenticated');
+drop policy if exists "parameter_set_items_select_authenticated" on public.parameter_set_items;
 create policy "parameter_set_items_select_authenticated" on public.parameter_set_items
   for select using (auth.role() = 'authenticated');
 
@@ -351,14 +366,18 @@ create policy "parameter_set_items_select_authenticated" on public.parameter_set
 
 -- audit_events: Admins can read every row; nobody gets an insert policy —
 -- only the service role writes here (same reasoning as devices above).
+drop policy if exists "audit_events_select_admin" on public.audit_events;
 create policy "audit_events_select_admin" on public.audit_events
   for select using (public.is_admin());
 
 -- visits / visit_products / readings: only rows under the caller's own pools.
+drop policy if exists "visits_select_own" on public.visits;
 create policy "visits_select_own" on public.visits
   for select using (pool_id in (select public.auth_pool_ids()));
+drop policy if exists "visit_products_select_own" on public.visit_products;
 create policy "visit_products_select_own" on public.visit_products
   for select using (visit_id in (select id from public.visits where pool_id in (select public.auth_pool_ids())));
+drop policy if exists "readings_select_own" on public.readings;
 create policy "readings_select_own" on public.readings
   for select using (visit_id in (select id from public.visits where pool_id in (select public.auth_pool_ids())));
 
