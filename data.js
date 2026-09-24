@@ -11,6 +11,7 @@
 
 var ACCOUNTS = {};
 var POOLS = {};
+var ADMIN_AUDIT_EVENTS = []; // live mode only — see loadAdminData()
 
 /* =========================================================
    1. reference data — parameters, products, technicians
@@ -190,6 +191,7 @@ function buildPool(id, name, params, scenario, propertyId, propertyName, propert
 }
 
 function buildDemoData(){
+  ADMIN_AUDIT_EVENTS = []; // no sensor/service activity concept in demo mode
   // Two hotels under one Hospitality Group (spec update, 2026-09-24: a
   // group-scoped account sees every property in its group, not just one).
   var PROPERTIES = {
@@ -398,11 +400,15 @@ function loadAdminData(){
   return fetchParameterSets().then(function(paramSets){
     return Promise.all([
       sb.from("pools").select("*"),
-      sb.from("properties").select("id,name,location")
+      sb.from("properties").select("id,name,location"),
+      sb.from("audit_events").select("*").order("occurred_at", {ascending:false}).limit(20)
     ]).then(function(results){
-      var poolsRes = results[0], propsRes = results[1];
+      var poolsRes = results[0], propsRes = results[1], auditRes = results[2];
       if(poolsRes.error) throw poolsRes.error;
       if(propsRes.error) throw propsRes.error;
+      // Non-fatal: audit_events is a spec update — don't block the whole Admin
+      // screen if a project hasn't run the latest schema.sql yet.
+      ADMIN_AUDIT_EVENTS = auditRes.error ? [] : (auditRes.data || []);
       var propsById = {};
       (propsRes.data||[]).forEach(function(row){ propsById[row.id] = row; });
 

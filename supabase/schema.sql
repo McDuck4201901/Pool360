@@ -185,6 +185,27 @@ create table if not exists public.readings (
 create index if not exists readings_visit_idx on public.readings (visit_id);
 
 -- ---------------------------------------------------------------------------
+-- 11. audit_events  (spec update, 2026-09-25 — auditability)
+-- ---------------------------------------------------------------------------
+-- The only write path that runs without a human today is the sensor
+-- ingestion function, so that's what actually populates this: every accepted
+-- reading, every rejected device key, every rate-limited request. No FK on
+-- entity_id on purpose — an audit row must survive the thing it describes
+-- being deleted later. Once a staff/admin write path exists, it logs here
+-- too, the same way (see docs/SECURITY.md).
+create table if not exists public.audit_events (
+  id           uuid primary key default gen_random_uuid(),
+  occurred_at  timestamptz not null default now(),
+  actor_type   text not null check (actor_type in ('service','admin','system')),
+  actor_label  text,        -- e.g. a device label, an admin's email, 'ingest-reading'
+  action       text not null,  -- e.g. 'visit.created', 'device.rejected', 'device.rate_limited'
+  entity_table text,
+  entity_id    uuid,
+  detail       jsonb        -- freeform context — never secrets, never a raw device key
+);
+create index if not exists audit_events_occurred_idx on public.audit_events (occurred_at desc);
+
+-- ---------------------------------------------------------------------------
 -- Helper: the set of pool ids the CURRENT user is allowed to see.
 -- security definer so it can read profiles/properties/pools once and be reused
 -- cheaply inside every RLS policy below, instead of repeating the join.
@@ -271,6 +292,7 @@ alter table public.devices             enable row level security;
 alter table public.visits              enable row level security;
 alter table public.visit_products      enable row level security;
 alter table public.readings            enable row level security;
+alter table public.audit_events        enable row level security;
 
 -- profiles: a user can read (and update their own display name on) only their own row.
 create policy "profiles_select_own" on public.profiles
@@ -326,6 +348,11 @@ create policy "parameter_set_items_select_authenticated" on public.parameter_set
 -- devices: never exposed to customers at all. Only the service role (used
 -- server-side by the ingest-reading Edge Function) can read/write this table;
 -- with RLS on and no policy defined for authenticated/anon, both are denied.
+
+-- audit_events: Admins can read every row; nobody gets an insert policy —
+-- only the service role writes here (same reasoning as devices above).
+create policy "audit_events_select_admin" on public.audit_events
+  for select using (public.is_admin());
 
 -- visits / visit_products / readings: only rows under the caller's own pools.
 create policy "visits_select_own" on public.visits

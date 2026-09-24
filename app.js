@@ -122,7 +122,13 @@ var STR = {
   paramTierLow:{en:"Low",es:"Bajo",nl:"Laag",pap:"Abou"},
   paramTierGood:{en:"Good",es:"Bueno",nl:"Goed",pap:"Bon"},
   paramTierWatch:{en:"Watch",es:"Observar",nl:"Let op",pap:"Observá"},
-  paramTierHigh:{en:"High",es:"Alto",nl:"Hoog",pap:"Haltu"}
+  paramTierHigh:{en:"High",es:"Alto",nl:"Hoog",pap:"Haltu"},
+  auditTitle:{en:"Recent activity",es:"Actividad reciente",nl:"Recente activiteit",pap:"Aktividat resien"},
+  auditDemoNote:{en:"Live only — this fills in once a real backend and at least one sensor are connected (see docs/SENSOR_INTEGRATION.md). Demo mode has no service-account activity to show.",es:"Solo en producción — se completa al conectar un backend real y al menos un sensor. El modo demo no tiene actividad de servicio que mostrar.",nl:"Alleen live — dit vult zich zodra een echte backend en minstens één sensor zijn verbonden. Demomodus heeft geen service-activiteit om te tonen.",pap:"Solo live — esaki ta yena ora un backend real i por lo menos un sensor ta konektá. Modo demo no tin aktividat di servisio pa mustra."},
+  auditEmpty:{en:"No activity yet.",es:"Aún no hay actividad.",nl:"Nog geen activiteit.",pap:"Ainda no tin aktividat."},
+  auditVisitCreated:{en:"Sensor reading accepted",es:"Lectura de sensor aceptada",nl:"Sensormeting geaccepteerd",pap:"Medishon di sensor aseptá"},
+  auditDeviceRejected:{en:"Unknown device key rejected",es:"Clave de dispositivo desconocida rechazada",nl:"Onbekende apparaatsleutel geweigerd",pap:"Yabi di aparato deskonosí rechasá"},
+  auditDeviceRateLimited:{en:"Device rate-limited",es:"Dispositivo limitado por frecuencia",nl:"Apparaat gelimiteerd",pap:"Aparato limitá pa frekuensia"}
 };
 
 var currentLang = "en";
@@ -397,7 +403,31 @@ function screenAdmin(){
     '<div class="wrap page">'+
       '<div class="page-head"><div><p class="eyebrow">'+t("navParamSets")+'</p><h1>'+t("adminTitle")+'</h1><p>'+t("adminSub")+'</p></div></div>'+
       groups.map(adminSetCard).join("")+
+      adminActivityCard()+
     '</div>';
+}
+// Audit trail (spec update, 2026-09-25) — the sensor ingestion function is
+// currently the only write path that runs without a human, so this is what
+// it looks like today: accepted readings, rejected device keys, rate-limits.
+function adminActivityCard(){
+  var ACTION_LABELS = {
+    "visit.created": t("auditVisitCreated"),
+    "device.rejected": t("auditDeviceRejected"),
+    "device.rate_limited": t("auditDeviceRateLimited")
+  };
+  var body;
+  if(!SANITIZE_LIVE){
+    body = '<p class="card-desc" style="margin-top:2px">'+t("auditDemoNote")+'</p>';
+  } else if(!ADMIN_AUDIT_EVENTS.length){
+    body = '<p class="card-desc" style="margin-top:2px">'+t("auditEmpty")+'</p>';
+  } else {
+    body = ADMIN_AUDIT_EVENTS.map(function(ev){
+      var label = ACTION_LABELS[ev.action] || ev.action;
+      var when = fmtDate(new Date(ev.occurred_at), {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+      return '<div class="alert-row"><div class="alert-ic">'+ICONS.info+'</div><p><b>'+esc(label)+'</b> <span class="subtle">'+esc(ev.actor_label||"")+' · '+when+'</span></p></div>';
+    }).join("");
+  }
+  return '<div class="card"><div class="card-head"><h2>'+t("auditTitle")+'</h2></div>'+body+'</div>';
 }
 function adminSetCard(g){
   var poolLabels = g.pools.map(function(pl){

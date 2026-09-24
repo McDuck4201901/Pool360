@@ -35,6 +35,13 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// Best-effort audit trail (see public.audit_events in schema.sql) — never
+// lets a logging failure break the actual ingestion response.
+function logAudit(action: string, fields: Record<string, unknown> = {}) {
+  supabase.from("audit_events").insert({ actor_type: "service", actor_label: "ingest-reading", action, ...fields })
+    .then(({ error }) => { if (error) console.error("audit log failed:", error.message); });
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "POST only" }), { status: 405 });
@@ -77,7 +84,9 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "Lookup failed" }), { status: 500 });
   }
   if (!device) {
-    // Unknown key — do not distinguish "wrong key" from "no such device" in the response.
+    // Unknown key — do not distinguish "wrong key" from "no such device" in the response,
+    // but do record that an unrecognized key was used (helps spot brute-forcing).
+    logAudit("device.rejected", { detail: { reason: "unknown_key", key_hash_prefix: keyHash.slice(0, 8) } });
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
@@ -85,6 +94,7 @@ Deno.serve(async (req) => {
   if (device.last_seen_at) {
     const secondsSinceLast = (Date.now() - new Date(device.last_seen_at).getTime()) / 1000;
     if (secondsSinceLast < 20) {
+      logAudit("device.rate_limited", { entity_table: "devices", entity_id: device.id, detail: { seconds_since_last: secondsSinceLast } });
       return new Response(JSON.stringify({ error: "Too many requests" }), { status: 429 });
     }
   }
@@ -108,6 +118,8 @@ Deno.serve(async (req) => {
   }
 
   await supabase.from("devices").update({ last_seen_at: occurredAt }).eq("id", device.id);
+
+  logAudit("visit.created", { entity_table: "visits", entity_id: visit.id, detail: { pool_id: device.pool_id, device_id: device.id, parameters: entries.map(([k]) => k) } });
 
   return new Response(JSON.stringify({ ok: true, visit_id: visit.id }), {
     status: 201,

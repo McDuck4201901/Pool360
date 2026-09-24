@@ -101,9 +101,13 @@ handling anything beyond what's in this spec:
   (charging a card, not just *displaying* a cost), that's a PCI-scope
   conversation with a payment processor (Stripe etc.) — don't build card
   storage yourself.
-- **No audit log.** There's no record of *who* changed what in the backend
-  admin flows described above (that's you, doing SQL by hand, today) — worth
-  adding before more than one or two people can touch the Supabase dashboard.
+- **Partial audit log.** `public.audit_events` (spec update, 2026-09-25)
+  records every accepted sensor reading and every rejected/rate-limited
+  device key, readable by Admins. It does **not** yet cover the manual-SQL
+  admin flows described above (creating a hospitality group, provisioning a
+  customer, editing a parameter set) — those still leave no record of *who*
+  did it. Worth closing before more than one or two people touch the
+  Supabase dashboard directly.
 - **No automated backups verification.** Supabase backs up your database,
   but "a backup exists" and "we've tested restoring it" are different
   claims — test a restore before you'd bet the business on it.
