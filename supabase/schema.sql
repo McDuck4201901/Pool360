@@ -23,6 +23,15 @@
 -- ---------------------------------------------------------------------------
 -- 1. profiles  (one row per customer login; id == auth.users.id)
 -- ---------------------------------------------------------------------------
+-- Spec update, 2026-09-24: a hotel_manager account can now be scoped to a
+-- whole Hospitality Group (sees every property under that group) instead of
+-- exactly one property. profiles.group_id is set only for that case.
+create table if not exists public.hospitality_groups (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  created_at  timestamptz not null default now()
+);
+
 create table if not exists public.profiles (
   id            uuid primary key references auth.users(id) on delete cascade,
   account_type  text not null check (account_type in ('private_owner','hotel_manager','admin')),
@@ -31,18 +40,26 @@ create table if not exists public.profiles (
   -- (see resolve_login_identifier() below). Private owners just use their email
   -- and can leave this null.
   login_name    text unique,
+  -- Set only for a group-level hotel_manager (see hospitality_groups above).
+  -- A manager scoped to a single property leaves this null and is instead
+  -- the direct account_id owner of that one properties row, as before.
+  group_id      uuid references public.hospitality_groups(id),
   created_at    timestamptz not null default now()
 );
 
 -- ---------------------------------------------------------------------------
--- 2. properties  (one property per account in this build — see spec §2)
+-- 2. properties  (a hotel/location. Either directly owned by one account, or
+--    a member of a hospitality group whose manager(s) see every property in
+--    it — see spec §2 and the 2026-09-24 update above.)
 -- ---------------------------------------------------------------------------
 create table if not exists public.properties (
   id          uuid primary key default gen_random_uuid(),
-  account_id  uuid not null unique references public.profiles(id) on delete cascade,
+  account_id  uuid unique references public.profiles(id) on delete cascade,
+  group_id    uuid references public.hospitality_groups(id) on delete cascade,
   name        text not null,
   location    text not null,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  constraint properties_owned_somehow check (account_id is not null or group_id is not null)
 );
 
 -- ---------------------------------------------------------------------------
@@ -172,6 +189,15 @@ create index if not exists readings_visit_idx on public.readings (visit_id);
 -- security definer so it can read profiles/properties/pools once and be reused
 -- cheaply inside every RLS policy below, instead of repeating the join.
 -- ---------------------------------------------------------------------------
+create or replace function public.auth_group_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select group_id from public.profiles where id = auth.uid()
+$$;
+
 create or replace function public.auth_pool_ids()
 returns setof uuid
 language sql
@@ -182,6 +208,7 @@ as $$
   from public.pools po
   join public.properties pr on pr.id = po.property_id
   where pr.account_id = auth.uid()
+     or pr.group_id = public.auth_group_id()
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -232,6 +259,7 @@ $$;
 -- ============================================================================
 -- Row Level Security
 -- ============================================================================
+alter table public.hospitality_groups  enable row level security;
 alter table public.profiles            enable row level security;
 alter table public.properties          enable row level security;
 alter table public.parameter_sets      enable row level security;
@@ -250,9 +278,15 @@ create policy "profiles_select_own" on public.profiles
 create policy "profiles_update_own" on public.profiles
   for update using (id = auth.uid());
 
--- properties: only the owning account's single property.
+-- hospitality_groups: only your own group's row (just the name — needed to
+-- label the account context in the UI for a group-scoped manager).
+create policy "hospitality_groups_select_own" on public.hospitality_groups
+  for select using (id = public.auth_group_id() or public.is_admin());
+
+-- properties: the account's own directly-owned property, or every property
+-- under the account's hospitality group when it's scoped to one.
 create policy "properties_select_own" on public.properties
-  for select using (account_id = auth.uid());
+  for select using (account_id = auth.uid() or group_id = public.auth_group_id());
 
 -- pools: only pools under the caller's own property (private_owner sees 1+,
 -- hotel_manager sees every pool at their property — same query either way,

@@ -32,8 +32,8 @@ var STR = {
   orDemo:{en:"Or continue with a demo account",es:"O continúa con una cuenta de demostración",nl:"Of ga verder met een demo-account",pap:"Of sigui ku un kuenta demo"},
   demoOwnerName:{en:"M. de Windt",es:"M. de Windt",nl:"M. de Windt",pap:"M. de Windt"},
   demoOwnerSub:{en:"Private owner · 1 pool",es:"Propietario privado · 1 piscina",nl:"Particuliere eigenaar · 1 zwembad",pap:"Doño privá · 1 pisina"},
-  demoHotelName:{en:"Pyrmont Resort & Spa",es:"Pyrmont Resort & Spa",nl:"Pyrmont Resort & Spa",pap:"Pyrmont Resort & Spa"},
-  demoHotelSub:{en:"Hotel manager · 2 pools",es:"Gerente de hotel · 2 piscinas",nl:"Hotelmanager · 2 zwembaden",pap:"Manager di hotel · 2 pisina"},
+  demoHotelName:{en:"Pyrmont Hospitality Group",es:"Grupo Hotelero Pyrmont",nl:"Pyrmont Hotelgroep",pap:"Grupo Hotelero Pyrmont"},
+  demoHotelSub:{en:"Group manager · 2 hotels · 3 pools",es:"Gerente de grupo · 2 hoteles · 3 piscinas",nl:"Groepsmanager · 2 hotels · 3 zwembaden",pap:"Manager di grupo · 2 hotel · 3 pisina"},
   demoAdminName:{en:"Sanitize Admin",es:"Administrador Sanitize",nl:"Sanitize Beheerder",pap:"Admin di Sanitize"},
   demoAdminSub:{en:"Admin · Parameter sets",es:"Admin · Conjuntos de parámetros",nl:"Beheerder · Parametersets",pap:"Admin · Konjunto di parámetro"},
   navOverview:{en:"Overview",es:"Resumen",nl:"Overzicht",pap:"Resúmen"},
@@ -100,6 +100,7 @@ var STR = {
   trendingHigh:{en:"high",es:"alta",nl:"hoog",pap:"haltu"},
   langLabel:{en:"Language",es:"Idioma",nl:"Taal",pap:"Idioma"},
   poolsCount:{en:"{n} pools",es:"{n} piscinas",nl:"{n} zwembaden",pap:"{n} pisina"},
+  hotelsCount:{en:"{n} hotels",es:"{n} hoteles",nl:"{n} hotels",pap:"{n} hotel"},
   tierGood:{en:"Excellent",es:"Excelente",nl:"Uitstekend",pap:"Ekselente"},
   tierWarn:{en:"Attention",es:"Atención",nl:"Aandacht",pap:"Atenshon"},
   tierCritical:{en:"Service needed",es:"Necesita servicio",nl:"Onderhoud nodig",pap:"Mester sirbishi"},
@@ -267,7 +268,7 @@ function topbar(opts){
       '<span class="brand-mark">'+ICONS.drop+'</span>'+
       '<span><span style="display:block">'+t("appName")+'</span><small>'+t("tagline")+'</small></span>'+
     '</button>'+
-    (acc && acc.property && opts.showContext!==false ? '<div class="topbar-context"><b>'+esc(acc.property.name[currentLang]||acc.property.name.en)+'</b><span>'+esc(acc.property.location)+'</span></div>' : '')+
+    (acc && acc.contextLabel && opts.showContext!==false ? '<div class="topbar-context"><b>'+esc(acc.contextLabel[currentLang]||acc.contextLabel.en)+'</b>'+(acc.contextSub?'<span>'+esc(acc.contextSub)+'</span>':'')+'</div>' : '')+
     '<div class="topbar-spacer"></div>'+
     (isAdmin ? '<button class="navbtn'+(state.route==="admin"?" active":"")+'" data-nav="admin">'+ICONS.sliders+' <span class="nav-label">'+t("navParamSets")+'</span></button>' : '')+
     (acc && !isAdmin && acc.poolIds.length>1 ? '<button class="navbtn'+(state.route==="overview"?" active":"")+'" data-nav="overview">'+ICONS.building+' <span class="nav-label">'+t("navOverview")+'</span></button>' : '')+
@@ -335,6 +336,7 @@ function screenOverview(){
     return sum + p.visits.filter(function(v){ return v.date.getMonth()===NOW.getMonth() && v.date.getFullYear()===NOW.getFullYear(); })
       .reduce(function(s,v){ return s+v.cost; },0);
   },0);
+  var groups = groupPoolsByProperty(pools);
   return topbar()+
     '<div class="wrap page">'+
       '<div class="page-head"><div><p class="eyebrow">'+t("poolsCount",{n:pools.length})+'</p><h1>'+t("overviewTitle")+'</h1><p>'+t("overviewSub")+'</p></div></div>'+
@@ -343,21 +345,42 @@ function screenOverview(){
         '<div class="stat-card'+(outOfRange?" warn":" good")+'"><div class="n tabular">'+outOfRange+'</div><div class="l">'+t("statOutOfRange")+'</div></div>'+
         '<div class="stat-card"><div class="n tabular">'+fmtMoney(spend)+'</div><div class="l">'+t("statSpend")+'</div></div>'+
       '</div>'+
-      '<div class="pool-grid">'+
-        pools.map(function(p){
-          var score = poolHealth(p), tier = scoreTier(score);
-          var latestVisit = p.visits[0];
-          return '<button class="pool-card" data-nav="pool" data-pool="'+p.id+'">'+
-            '<div class="pool-card-top">'+
-              '<div><h3>'+esc(p.name[currentLang]||p.name.en)+'</h3><span>'+fmtDate(latestVisit.date)+'</span></div>'+
-              miniRing(score)+
-            '</div>'+
-            statusPillForTier(tier)+
-            '<div class="pool-card-row"><span>'+t("lastReading")+'</span><b class="tabular">'+score+' / 100</b></div>'+
-          '</button>';
-        }).join("")+
-      '</div>'+
+      (groups.length>1
+        ? groups.map(function(g){ return '<div class="property-group"><h2 class="property-group-title">'+esc(g.label)+'</h2>'+poolGridHtml(g.pools)+'</div>'; }).join("")
+        : poolGridHtml(pools)
+      )+
     '</div>';
+}
+// Groups pools by which hotel/property they belong to, in first-seen order —
+// a Hospitality Group account spans several, a single-property account has
+// exactly one group so the section header is skipped (see screenOverview).
+function groupPoolsByProperty(pools){
+  var order = [], byKey = {};
+  pools.forEach(function(p){
+    var key = p.propertyId || "_";
+    if(!byKey[key]){
+      byKey[key] = {label: p.propertyName ? (p.propertyName[currentLang]||p.propertyName.en) : "", pools: []};
+      order.push(key);
+    }
+    byKey[key].pools.push(p);
+  });
+  return order.map(function(k){ return byKey[k]; });
+}
+function poolGridHtml(pools){
+  return '<div class="pool-grid">'+
+    pools.map(function(p){
+      var score = poolHealth(p), tier = scoreTier(score);
+      var latestVisit = p.visits[0];
+      return '<button class="pool-card" data-nav="pool" data-pool="'+p.id+'">'+
+        '<div class="pool-card-top">'+
+          '<div><h3>'+esc(p.name[currentLang]||p.name.en)+'</h3><span>'+fmtDate(latestVisit.date)+'</span></div>'+
+          miniRing(score)+
+        '</div>'+
+        statusPillForTier(tier)+
+        '<div class="pool-card-row"><span>'+t("lastReading")+'</span><b class="tabular">'+score+' / 100</b></div>'+
+      '</button>';
+    }).join("")+
+  '</div>';
 }
 function statusPillForTier(tier){
   var label = tier==="good" ? t("tierGood") : tier==="warn" ? t("tierWarn") : t("tierCritical");
@@ -427,7 +450,7 @@ function screenPool(){
   html += '<div class="wrap page">';
   html += '<div class="pool-header">'+
     (multi ? '<button class="back-btn" data-nav="overview">'+ICONS.back+'</button>' : '')+
-    '<div><h1>'+esc(pool.name[currentLang]||pool.name.en)+'</h1><span class="loc">'+esc(acc.property.location)+'</span></div>'+
+    '<div><h1>'+esc(pool.name[currentLang]||pool.name.en)+'</h1><span class="loc">'+esc((pool.propertyName?(pool.propertyName[currentLang]||pool.propertyName.en)+' · ':'')+(pool.propertyLocation||''))+'</span></div>'+
   '</div>';
 
   html += '<div class="hero-grid">';
@@ -670,7 +693,7 @@ function printableInvoice(pools, visits){
   var total = visits.reduce(function(s,v){return s+v.cost;},0);
   return '<div style="padding:20px 0">'+
     '<h2 style="margin:0 0 4px">'+t("appName")+' — '+t("billingTitle")+'</h2>'+
-    '<p style="color:#555;margin:0 0 16px">'+esc(acc.property.name[currentLang]||acc.property.name.en)+' · '+esc(acc.property.location)+' · '+fmtDate(NOW)+'</p>'+
+    '<p style="color:#555;margin:0 0 16px">'+esc(acc.contextLabel[currentLang]||acc.contextLabel.en)+(acc.contextSub?' · '+esc(acc.contextSub):'')+' · '+fmtDate(NOW)+'</p>'+
     '<table style="width:100%;border-collapse:collapse;font-size:12px">'+
     '<thead><tr>'+["Date","Pool","Technician","Products","Cost"].map(function(h){return '<th style="text-align:left;border-bottom:1px solid #999;padding:6px 8px">'+h+'</th>';}).join("")+'</tr></thead><tbody>'+
     visits.map(function(v){

@@ -137,11 +137,13 @@ function paramGenStats(p){
 // `params`: the parameter set this specific pool is tracking — DEFAULT_PARAMS
 // for a standard pool, or a trimmed/adjusted custom list (see buildDemoData's
 // "Home Pool" for an example: a simpler setup with no ORP or salinity).
-// `propertyName`: denormalized onto the pool (rather than looked up via
-// propertyId) so the Admin screen can label a pool without needing a separate
-// account/property lookup — same shape works whether the pool came from the
-// demo generator or a real loadAdminData() fetch.
-function buildPool(id, name, params, scenario, propertyId, propertyName){
+// `propertyName`/`propertyLocation`: denormalized onto the pool (rather than
+// looked up via propertyId) so any screen can label a pool by its own hotel
+// without a separate lookup — needed once one account can span several
+// properties (a Hospitality Group), so there's no single "the account's
+// property" to fall back on. Same shape whether the pool came from the demo
+// generator, loadLiveData(), or loadAdminData().
+function buildPool(id, name, params, scenario, propertyId, propertyName, propertyLocation){
   var rng = mulberry32(hashSeed(id));
   var series = {};
   params.forEach(function(p){
@@ -184,30 +186,38 @@ function buildPool(id, name, params, scenario, propertyId, propertyName){
   }
   visits.reverse(); // most recent first
 
-  return {id:id, name:name, propertyId:propertyId, propertyName:propertyName, params:params, visits:visits};
+  return {id:id, name:name, propertyId:propertyId, propertyName:propertyName, propertyLocation:propertyLocation, params:params, visits:visits};
 }
 
 function buildDemoData(){
+  // Two hotels under one Hospitality Group (spec update, 2026-09-24: a
+  // group-scoped account sees every property in its group, not just one).
+  var PROPERTIES = {
+    dewindt:        {name:{en:"Residence de Windt",es:"Residencia de Windt",nl:"Residentie de Windt",pap:"Residensha de Windt"}, location:"Jan Thiel, Curaçao"},
+    "pyrmont-main": {name:{en:"Pyrmont Resort & Spa",es:"Pyrmont Resort & Spa",nl:"Pyrmont Resort & Spa",pap:"Pyrmont Resort & Spa"}, location:"Willemstad, Curaçao"},
+    "pyrmont-beach":{name:{en:"Pyrmont Beach Club",es:"Pyrmont Beach Club",nl:"Pyrmont Beach Club",pap:"Pyrmont Beach Club"}, location:"Mambo Beach, Curaçao"}
+  };
+
   ACCOUNTS = {
     dewindt: {
       id:"dewindt", type:"private_owner",
       loginKey:"m.dewindt@example.com",
       displayName:{en:"M. de Windt",es:"M. de Windt",nl:"M. de Windt",pap:"M. de Windt"},
-      property:{ name:{en:"Residence de Windt",es:"Residencia de Windt",nl:"Residentie de Windt",pap:"Residensha de Windt"}, location:"Jan Thiel, Curaçao" },
+      contextLabel: PROPERTIES.dewindt.name, contextSub: PROPERTIES.dewindt.location,
       poolIds:["dewindt-home"]
     },
     pyrmont: {
       id:"pyrmont", type:"hotel_manager",
       loginKey:"pyrmont",
-      displayName:{en:"Pyrmont Resort & Spa",es:"Pyrmont Resort & Spa",nl:"Pyrmont Resort & Spa",pap:"Pyrmont Resort & Spa"},
-      property:{ name:{en:"Pyrmont Resort & Spa",es:"Pyrmont Resort & Spa",nl:"Pyrmont Resort & Spa",pap:"Pyrmont Resort & Spa"}, location:"Willemstad, Curaçao" },
-      poolIds:["pyrmont-main","pyrmont-lagoon"]
+      displayName:{en:"Pyrmont Hospitality Group",es:"Grupo Hotelero Pyrmont",nl:"Pyrmont Hotelgroep",pap:"Grupo Hotelero Pyrmont"},
+      contextLabel:{en:"Pyrmont Hospitality Group",es:"Grupo Hotelero Pyrmont",nl:"Pyrmont Hotelgroep",pap:"Grupo Hotelero Pyrmont"}, contextSub:"2 hotels · Curaçao",
+      poolIds:["pyrmont-main","pyrmont-lagoon","pyrmont-beach"]
     },
     admin: {
       id:"admin", type:"admin",
       loginKey:"admin",
       displayName:{en:"Sanitize Admin",es:"Administrador Sanitize",nl:"Sanitize Beheerder",pap:"Admin di Sanitize"},
-      property:null, poolIds:[]
+      contextLabel:null, contextSub:null, poolIds:[]
     }
   };
 
@@ -219,9 +229,10 @@ function buildDemoData(){
 
   POOLS = {};
   [
-    buildPool("dewindt-home", {en:"Home Pool",es:"Piscina Principal",nl:"Thuiszwembad",pap:"Pisina di Kas"}, HOME_POOL_PARAMS, {alertParam:null}, "dewindt", ACCOUNTS.dewindt.property.name),
-    buildPool("pyrmont-main", {en:"Main Pool",es:"Piscina Principal",nl:"Hoofdzwembad",pap:"Pisina Prinsipal"}, DEFAULT_PARAMS, {alertParam:null}, "pyrmont", ACCOUNTS.pyrmont.property.name),
-    buildPool("pyrmont-lagoon", {en:"Lagoon Pool",es:"Piscina Lagoon",nl:"Lagoon Zwembad",pap:"Pisina Lagoon"}, DEFAULT_PARAMS, {alertParam:"freeChlorine", driftSpan:5, driftTarget:0.8}, "pyrmont", ACCOUNTS.pyrmont.property.name)
+    buildPool("dewindt-home", {en:"Home Pool",es:"Piscina Principal",nl:"Thuiszwembad",pap:"Pisina di Kas"}, HOME_POOL_PARAMS, {alertParam:null}, "dewindt", PROPERTIES.dewindt.name, PROPERTIES.dewindt.location),
+    buildPool("pyrmont-main", {en:"Main Pool",es:"Piscina Principal",nl:"Hoofdzwembad",pap:"Pisina Prinsipal"}, DEFAULT_PARAMS, {alertParam:null}, "pyrmont-main", PROPERTIES["pyrmont-main"].name, PROPERTIES["pyrmont-main"].location),
+    buildPool("pyrmont-lagoon", {en:"Lagoon Pool",es:"Piscina Lagoon",nl:"Lagoon Zwembad",pap:"Pisina Lagoon"}, DEFAULT_PARAMS, {alertParam:"freeChlorine", driftSpan:5, driftTarget:0.8}, "pyrmont-main", PROPERTIES["pyrmont-main"].name, PROPERTIES["pyrmont-main"].location),
+    buildPool("pyrmont-beach", {en:"Beach Club Pool",es:"Piscina Beach Club",nl:"Beach Club Zwembad",pap:"Pisina Beach Club"}, DEFAULT_PARAMS, {alertParam:null}, "pyrmont-beach", PROPERTIES["pyrmont-beach"].name, PROPERTIES["pyrmont-beach"].location)
   ].forEach(function(p){ POOLS[p.id]=p; });
 }
 
@@ -264,21 +275,21 @@ function fetchParameterSets(){
   });
 }
 
+// A profile with group_id set is scoped to every property under that
+// Hospitality Group (spec update, 2026-09-24); otherwise it's scoped to the
+// single property it directly owns (account_id) — same as before.
 function loadLiveData(userId){
   if(!SANITIZE_LIVE) return Promise.reject(new Error("Live backend not configured."));
 
   return Promise.all([
     sb.from("profiles").select("*").eq("id", userId).single(),
-    sb.from("properties").select("*").eq("account_id", userId).single(),
     sb.from("products").select("*"),
     fetchParameterSets()
   ]).then(function(results){
-    var profileRes = results[0], propertyRes = results[1], productsRes = results[2], paramSets = results[3];
+    var profileRes = results[0], productsRes = results[1], paramSets = results[2];
     if(profileRes.error) throw profileRes.error;
-    if(propertyRes.error) throw propertyRes.error;
     if(productsRes.error) throw productsRes.error;
-
-    var profile = profileRes.data, property = propertyRes.data;
+    var profile = profileRes.data;
 
     // Replace the product catalog with the real one so productName()/productUnit()
     // work unchanged for live visit_products (see PRODUCTS comment above).
@@ -286,52 +297,81 @@ function loadLiveData(userId){
       return {id: row.id, name: asIs(row.name), unit: row.unit, cost: Number(row.unit_cost)};
     });
 
-    return sb.from("pools").select("*").eq("property_id", property.id).then(function(poolsRes){
-      if(poolsRes.error) throw poolsRes.error;
-      var poolRows = poolsRes.data || [];
+    var propertiesQuery = profile.group_id
+      ? sb.from("properties").select("*").eq("group_id", profile.group_id)
+      : sb.from("properties").select("*").eq("account_id", userId);
+    var groupQuery = profile.group_id
+      ? sb.from("hospitality_groups").select("*").eq("id", profile.group_id).single()
+      : Promise.resolve({data:null, error:null});
 
-      return Promise.all(poolRows.map(function(poolRow){
-        return sb.from("visits")
-          .select("id, occurred_at, notes, photo_url, source, technicians(name), visit_products(qty, line_cost, product_id), readings(parameter, value)")
-          .eq("pool_id", poolRow.id)
-          .order("occurred_at", {ascending:false})
-          .then(function(visitsRes){
-            if(visitsRes.error) throw visitsRes.error;
-            var visits = (visitsRes.data || []).map(function(row){
-              var readings = {};
-              (row.readings||[]).forEach(function(r){ readings[r.parameter] = Number(r.value); });
-              var products = (row.visit_products||[]).map(function(vp){
-                return {id: vp.product_id, qty: Number(vp.qty), cost: Number(vp.line_cost)};
+    return Promise.all([propertiesQuery, groupQuery]).then(function(res2){
+      var propsRes = res2[0], groupRes = res2[1];
+      if(propsRes.error) throw propsRes.error;
+      if(groupRes.error) throw groupRes.error;
+      var properties = propsRes.data || [];
+      if(!properties.length) throw new Error("No property is set up for this account yet.");
+      var propById = {};
+      properties.forEach(function(pr){ propById[pr.id] = pr; });
+      var propertyIds = properties.map(function(pr){ return pr.id; });
+
+      return sb.from("pools").select("*").in("property_id", propertyIds).then(function(poolsRes){
+        if(poolsRes.error) throw poolsRes.error;
+        var poolRows = poolsRes.data || [];
+
+        return Promise.all(poolRows.map(function(poolRow){
+          return sb.from("visits")
+            .select("id, occurred_at, notes, photo_url, source, technicians(name), visit_products(qty, line_cost, product_id), readings(parameter, value)")
+            .eq("pool_id", poolRow.id)
+            .order("occurred_at", {ascending:false})
+            .then(function(visitsRes){
+              if(visitsRes.error) throw visitsRes.error;
+              var visits = (visitsRes.data || []).map(function(row){
+                var readings = {};
+                (row.readings||[]).forEach(function(r){ readings[r.parameter] = Number(r.value); });
+                var products = (row.visit_products||[]).map(function(vp){
+                  return {id: vp.product_id, qty: Number(vp.qty), cost: Number(vp.line_cost)};
+                });
+                var cost = products.reduce(function(s,p){ return s+p.cost; }, 0);
+                return {
+                  id: row.id, poolId: poolRow.id, date: new Date(row.occurred_at),
+                  technician: row.technicians ? row.technicians.name : (row.source==="sensor" ? t("sensorAuto") : "—"),
+                  readings: readings, products: products, cost: +cost.toFixed(2),
+                  note: row.notes || (row.source==="sensor" ? t("sensorAutoNote") : ""),
+                  photo: row.photo_url || placeholderPhoto(row.id)
+                };
               });
-              var cost = products.reduce(function(s,p){ return s+p.cost; }, 0);
+              var setEntry = poolRow.parameter_set_id ? paramSets.byId[poolRow.parameter_set_id] : null;
+              var prop = propById[poolRow.property_id];
               return {
-                id: row.id, poolId: poolRow.id, date: new Date(row.occurred_at),
-                technician: row.technicians ? row.technicians.name : (row.source==="sensor" ? t("sensorAuto") : "—"),
-                readings: readings, products: products, cost: +cost.toFixed(2),
-                note: row.notes || (row.source==="sensor" ? t("sensorAutoNote") : ""),
-                photo: row.photo_url || placeholderPhoto(row.id)
+                id: poolRow.id, name: asIs(poolRow.name), propertyId: poolRow.property_id,
+                propertyName: asIs(prop.name), propertyLocation: prop.location,
+                params: setEntry ? setEntry.params : paramSets.defaultParams, visits: visits
               };
             });
-            var setEntry = poolRow.parameter_set_id ? paramSets.byId[poolRow.parameter_set_id] : null;
-            return {
-              id: poolRow.id, name: asIs(poolRow.name), propertyId: property.id, propertyName: asIs(property.name),
-              params: setEntry ? setEntry.params : paramSets.defaultParams, visits: visits
-            };
-          });
-      }));
-    }).then(function(poolsBuilt){
-      POOLS = {};
-      poolsBuilt.forEach(function(p){ POOLS[p.id] = p; });
+        }));
+      }).then(function(poolsBuilt){
+        POOLS = {};
+        poolsBuilt.forEach(function(p){ POOLS[p.id] = p; });
 
-      ACCOUNTS = {};
-      ACCOUNTS[profile.id] = {
-        id: profile.id, type: profile.account_type,
-        loginKey: profile.login_name || "",
-        displayName: asIs(profile.display_name),
-        property: {name: asIs(property.name), location: property.location},
-        poolIds: poolsBuilt.map(function(p){ return p.id; })
-      };
-      return ACCOUNTS[profile.id];
+        var contextLabel, contextSub;
+        if(groupRes.data){
+          contextLabel = asIs(groupRes.data.name);
+          contextSub = t("hotelsCount", {n: properties.length});
+        } else {
+          contextLabel = asIs(properties[0].name);
+          contextSub = properties[0].location;
+        }
+
+        ACCOUNTS = {};
+        ACCOUNTS[profile.id] = {
+          id: profile.id, type: profile.account_type,
+          loginKey: profile.login_name || "",
+          displayName: asIs(profile.display_name),
+          contextLabel: contextLabel, contextSub: contextSub,
+          poolIds: poolsBuilt.map(function(p){ return p.id; })
+        };
+        return ACCOUNTS[profile.id];
+      });
     });
   });
 }
@@ -372,12 +412,12 @@ function loadAdminData(){
         var prop = propsById[row.property_id];
         POOLS[row.id] = {
           id: row.id, name: asIs(row.name), propertyId: row.property_id,
-          propertyName: asIs(prop ? prop.name : "—"),
+          propertyName: asIs(prop ? prop.name : "—"), propertyLocation: prop ? prop.location : "",
           params: setEntry ? setEntry.params : paramSets.defaultParams,
           visits: [] // admin view shows set definitions, not customer chemistry history
         };
       });
-      return {id:"admin", type:"admin", loginKey:"", displayName:asIs("Admin"), property:null, poolIds:[]};
+      return {id:"admin", type:"admin", loginKey:"", displayName:asIs("Admin"), contextLabel:null, contextSub:null, poolIds:[]};
     });
   });
 }
