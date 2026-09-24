@@ -92,3 +92,26 @@ log if/when that gets built.
 3. Re-check `bandHalf` — it's not derived automatically, so a widened Good
    band without a matching `bandHalf` change will score too harshly or too
    leniently near the edge.
+
+## Regulatory reference (spec update, 2026-09-25)
+
+The product's own thresholds above (`DEFAULT_PARAMS` / `parameter_sets`) are
+what score pools and raise alerts — that's a deliberate product decision,
+tuned to this business. Regulatory/public-health guidance is a **separate**,
+explicitly-labeled thing: `REGULATORY_REFERENCE` in `data.js` and the
+`regulatory_reference` table in Postgres, shown only on the Admin screen as a
+side-by-side comparison. Nothing reads it for scoring or alerts.
+
+It's currently seeded with CDC Model Aquatic Health Code (MAHC) and PHTA
+(Pool & Hot Tub Alliance) figures — the standard references for US
+commercial/hotel pools — as an **explicit placeholder** (`is_placeholder:
+true`), because the real jurisdiction-specific regulatory source for this
+customer exists but wasn't accessible yet when this was built. The Admin
+screen shows a visible "PLACEHOLDER" badge and links the CDC source so this
+is never mistaken for the confirmed number.
+
+**Swapping in the real source later:** update the one `regulatory_reference`
+row (`UPDATE public.regulatory_reference SET source_name=..., source_url=...,
+is_placeholder=false, limits=...`) — no code change, no migration. Mirror the
+same values into `DEFAULT_REGULATORY_REFERENCE` in `data.js` if you want demo
+mode to show the real numbers too.

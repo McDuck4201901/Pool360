@@ -210,6 +210,27 @@ create table if not exists public.audit_events (
 create index if not exists audit_events_occurred_idx on public.audit_events (occurred_at desc);
 
 -- ---------------------------------------------------------------------------
+-- 12. regulatory_reference  (spec update, 2026-09-25 — separate from scoring)
+-- ---------------------------------------------------------------------------
+-- Deliberately NOT wired into DEFAULT_PARAMS/parameter_sets or the health
+-- score — this is public-health/industry guidance shown to Admins for
+-- comparison, not the numbers that drive the gauge or alerts. Single row,
+-- updated in place once the customer's actual jurisdiction-specific
+-- regulatory source is available (you told us you have one, just not
+-- access to it right now) — that's a data update here, not a code change.
+-- Seeded below with CDC Model Aquatic Health Code (MAHC) and PHTA
+-- (Pool & Hot Tub Alliance) figures — the standard references for US
+-- commercial/hotel pools — as an explicitly-labeled placeholder.
+create table if not exists public.regulatory_reference (
+  id           uuid primary key default gen_random_uuid(),
+  source_name  text not null,
+  source_url   text,
+  is_placeholder boolean not null default true, -- false once the real customer source replaces this row
+  updated_at   timestamptz not null default now(),
+  limits       jsonb not null default '{}'::jsonb -- {"<paramKey>": {"min":n|null,"max":n|null,"note":"text"}}
+);
+
+-- ---------------------------------------------------------------------------
 -- Helper: the set of pool ids the CURRENT user is allowed to see.
 -- security definer so it can read profiles/properties/pools once and be reused
 -- cheaply inside every RLS policy below, instead of repeating the join.
@@ -297,6 +318,7 @@ alter table public.visits              enable row level security;
 alter table public.visit_products      enable row level security;
 alter table public.readings            enable row level security;
 alter table public.audit_events        enable row level security;
+alter table public.regulatory_reference enable row level security;
 
 -- profiles: a user can read (and update their own display name on) only their own row.
 drop policy if exists "profiles_select_own" on public.profiles;
@@ -368,6 +390,12 @@ create policy "parameter_set_items_select_authenticated" on public.parameter_set
 -- only the service role writes here (same reasoning as devices above).
 drop policy if exists "audit_events_select_admin" on public.audit_events;
 create policy "audit_events_select_admin" on public.audit_events
+  for select using (public.is_admin());
+
+-- regulatory_reference: Admin-only, same reasoning — it's a comparison tool
+-- for Admins, not something the customer dashboard reads or shows.
+drop policy if exists "regulatory_reference_select_admin" on public.regulatory_reference;
+create policy "regulatory_reference_select_admin" on public.regulatory_reference
   for select using (public.is_admin());
 
 -- visits / visit_products / readings: only rows under the caller's own pools.
@@ -443,3 +471,26 @@ begin
     (default_set_id, 'temperature', '°C', 1, 0, null, null, null, false, 10, '[]')
   on conflict (parameter_set_id, key) do nothing;
 end $$;
+
+-- Regulatory reference (spec update, 2026-09-25) — CDC Model Aquatic Health
+-- Code (MAHC) and PHTA (Pool & Hot Tub Alliance) figures, the standard
+-- references for US commercial/hotel pools. Explicitly a placeholder — see
+-- the table comment above and docs/PARAMETERS.md. Not used by any scoring or
+-- alert logic; Admin-only reference display.
+insert into public.regulatory_reference (source_name, source_url, is_placeholder, limits)
+select
+  'CDC Model Aquatic Health Code (MAHC) & PHTA — general US commercial/hotel pool guidance (placeholder pending the confirmed jurisdiction-specific source)',
+  'https://www.cdc.gov/healthy-swimming/toolkit/operating-public-pools-hot-tubs-and-splash-pads.html',
+  true,
+  '{
+    "ph": {"min":7.0,"max":7.8,"note":"CDC MAHC operating range; PHTA precision target 7.4-7.6"},
+    "freeChlorine": {"min":1.0,"max":null,"note":"CDC minimum (public pools); PHTA operational target 2-4 ppm"},
+    "combinedChlorine": {"min":null,"max":0.2,"note":"PHTA / NSPF ceiling"},
+    "totalAlkalinity": {"min":80,"max":120,"note":"PHTA, traditional chlorine pools"},
+    "calciumHardness": {"min":200,"max":400,"note":"PHTA, concrete/plaster pools"},
+    "cyanuricAcid": {"min":null,"max":90,"note":"MAHC public-pool cap"},
+    "salinity": {"min":null,"max":null,"note":"No public-health code limit found — salt levels are an equipment/manufacturer operating spec, not a regulatory limit"},
+    "bromine": {"min":3,"max":5,"note":"PHTA / CMAHC, pools (spas run higher, 4-6 ppm)"},
+    "orp": {"min":650,"max":750,"note":"PHTA / MAHC guidance"}
+  }'::jsonb
+where not exists (select 1 from public.regulatory_reference);

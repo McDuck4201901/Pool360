@@ -53,6 +53,33 @@ var DEFAULT_PARAMS = [
   {key:"temperature", unit:"°C", decimals:1, weight:0, scale:null, tiers:null}
 ];
 DEFAULT_PARAMS.__isDefault = true;
+
+// Regulatory reference (spec update, 2026-09-25) — deliberately NOT read by
+// any scoring/alert code. Admin-only comparison display (see screenAdmin in
+// app.js and public.regulatory_reference in schema.sql). Sourced from CDC's
+// Model Aquatic Health Code and PHTA — the standard references for US
+// commercial/hotel pools — as an explicit placeholder until the real,
+// jurisdiction-specific source you have is available (see docs/PARAMETERS.md).
+var DEFAULT_REGULATORY_REFERENCE = {
+  sourceName: "CDC Model Aquatic Health Code (MAHC) & PHTA — general US commercial/hotel pool guidance (placeholder pending the confirmed jurisdiction-specific source)",
+  sourceUrl: "https://www.cdc.gov/healthy-swimming/toolkit/operating-public-pools-hot-tubs-and-splash-pads.html",
+  isPlaceholder: true,
+  updatedAt: "2026-09-25",
+  limits: {
+    ph: {min:7.0, max:7.8, note:"CDC MAHC operating range; PHTA precision target 7.4-7.6"},
+    freeChlorine: {min:1.0, max:null, note:"CDC minimum (public pools); PHTA operational target 2-4 ppm"},
+    combinedChlorine: {min:null, max:0.2, note:"PHTA / NSPF ceiling"},
+    totalAlkalinity: {min:80, max:120, note:"PHTA, traditional chlorine pools"},
+    calciumHardness: {min:200, max:400, note:"PHTA, concrete/plaster pools"},
+    cyanuricAcid: {min:null, max:90, note:"MAHC public-pool cap"},
+    salinity: {min:null, max:null, note:"No public-health code limit found — salt levels are an equipment/manufacturer operating spec, not a regulatory limit"},
+    bromine: {min:3, max:5, note:"PHTA / CMAHC, pools (spas run higher, 4-6 ppm)"},
+    orp: {min:650, max:750, note:"PHTA / MAHC guidance"}
+  }
+};
+// Mutable — loadAdminData() overwrites this with the real DB row when one
+// exists; buildDemoData() resets it back to the placeholder above.
+var REGULATORY_REFERENCE = DEFAULT_REGULATORY_REFERENCE;
 function paramByKey(params, key){ for(var i=0;i<params.length;i++) if(params[i].key===key) return params[i]; }
 function poolParams(pool){ return pool.params || DEFAULT_PARAMS; }
 
@@ -192,6 +219,7 @@ function buildPool(id, name, params, scenario, propertyId, propertyName, propert
 
 function buildDemoData(){
   ADMIN_AUDIT_EVENTS = []; // no sensor/service activity concept in demo mode
+  REGULATORY_REFERENCE = DEFAULT_REGULATORY_REFERENCE;
   // Two hotels under one Hospitality Group (spec update, 2026-09-24: a
   // group-scoped account sees every property in its group, not just one).
   var PROPERTIES = {
@@ -401,14 +429,21 @@ function loadAdminData(){
     return Promise.all([
       sb.from("pools").select("*"),
       sb.from("properties").select("id,name,location"),
-      sb.from("audit_events").select("*").order("occurred_at", {ascending:false}).limit(20)
+      sb.from("audit_events").select("*").order("occurred_at", {ascending:false}).limit(20),
+      sb.from("regulatory_reference").select("*").limit(1).maybeSingle()
     ]).then(function(results){
-      var poolsRes = results[0], propsRes = results[1], auditRes = results[2];
+      var poolsRes = results[0], propsRes = results[1], auditRes = results[2], regRes = results[3];
       if(poolsRes.error) throw poolsRes.error;
       if(propsRes.error) throw propsRes.error;
-      // Non-fatal: audit_events is a spec update — don't block the whole Admin
-      // screen if a project hasn't run the latest schema.sql yet.
+      // Non-fatal: audit_events/regulatory_reference are later spec updates —
+      // don't block the whole Admin screen if a project hasn't run the latest
+      // schema.sql yet.
       ADMIN_AUDIT_EVENTS = auditRes.error ? [] : (auditRes.data || []);
+      REGULATORY_REFERENCE = (!regRes.error && regRes.data) ? {
+        sourceName: regRes.data.source_name, sourceUrl: regRes.data.source_url,
+        isPlaceholder: regRes.data.is_placeholder, updatedAt: regRes.data.updated_at,
+        limits: regRes.data.limits || {}
+      } : DEFAULT_REGULATORY_REFERENCE;
       var propsById = {};
       (propsRes.data||[]).forEach(function(row){ propsById[row.id] = row; });
 
@@ -531,5 +566,5 @@ function statusLine(pool){
 // Node-only export for the test suite (test/scoring.test.js) — no-op in the
 // browser, where `module` doesn't exist. Doesn't change runtime behavior.
 if(typeof module!=="undefined" && module.exports){
-  module.exports = { DEFAULT_PARAMS: DEFAULT_PARAMS, paramByKey: paramByKey, paramTierInfo: paramTierInfo, paramStatus: paramStatus, paramScore: paramScore, poolHealth: poolHealth, poolAlerts: poolAlerts, scoreTier: scoreTier };
+  module.exports = { DEFAULT_PARAMS: DEFAULT_PARAMS, paramByKey: paramByKey, paramTierInfo: paramTierInfo, paramStatus: paramStatus, paramScore: paramScore, poolHealth: poolHealth, poolAlerts: poolAlerts, scoreTier: scoreTier, DEFAULT_REGULATORY_REFERENCE: DEFAULT_REGULATORY_REFERENCE };
 }

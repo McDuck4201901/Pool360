@@ -4,7 +4,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { DEFAULT_PARAMS, paramTierInfo, paramScore, poolHealth, poolAlerts, scoreTier } = require("../data.js");
+const { DEFAULT_PARAMS, paramTierInfo, paramScore, poolHealth, poolAlerts, scoreTier, DEFAULT_REGULATORY_REFERENCE } = require("../data.js");
 
 // A reading for every parameter, comfortably inside its Good tier, so a pool
 // built from this scores 100 — tests override just the parameter under test.
@@ -79,4 +79,15 @@ test("scoreTier — composite score bands", () => {
   assert.equal(scoreTier(70), "warn");
   assert.equal(scoreTier(60), "warn");
   assert.equal(scoreTier(50), "critical");
+});
+
+test("regulatory reference stays in sync with the parameter list (data-integrity, not scoring)", () => {
+  // Not a claim these numbers drive anything — see docs/PARAMETERS.md. Just
+  // catches the case where a new scored parameter is added and the
+  // regulatory comparison table silently falls out of date.
+  const scoredKeys = DEFAULT_PARAMS.filter(p => p.tiers).map(p => p.key);
+  for (const key of scoredKeys) {
+    assert.ok(key in DEFAULT_REGULATORY_REFERENCE.limits, `regulatory_reference has no entry for "${key}"`);
+  }
+  assert.equal(DEFAULT_REGULATORY_REFERENCE.isPlaceholder, true, "must stay flagged as a placeholder until the real source replaces it");
 });

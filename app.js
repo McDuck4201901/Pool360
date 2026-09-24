@@ -128,7 +128,12 @@ var STR = {
   auditEmpty:{en:"No activity yet.",es:"Aún no hay actividad.",nl:"Nog geen activiteit.",pap:"Ainda no tin aktividat."},
   auditVisitCreated:{en:"Sensor reading accepted",es:"Lectura de sensor aceptada",nl:"Sensormeting geaccepteerd",pap:"Medishon di sensor aseptá"},
   auditDeviceRejected:{en:"Unknown device key rejected",es:"Clave de dispositivo desconocida rechazada",nl:"Onbekende apparaatsleutel geweigerd",pap:"Yabi di aparato deskonosí rechasá"},
-  auditDeviceRateLimited:{en:"Device rate-limited",es:"Dispositivo limitado por frecuencia",nl:"Apparaat gelimiteerd",pap:"Aparato limitá pa frekuensia"}
+  auditDeviceRateLimited:{en:"Device rate-limited",es:"Dispositivo limitado por frecuencia",nl:"Apparaat gelimiteerd",pap:"Aparato limitá pa frekuensia"},
+  regulatoryTitle:{en:"Regulatory reference",es:"Referencia regulatoria",nl:"Regelgevingsreferentie",pap:"Referensha regulatorio"},
+  regulatoryPlaceholderChip:{en:"PLACEHOLDER",es:"PROVISIONAL",nl:"PLACEHOLDER",pap:"PROVISIONAL"},
+  regulatorySourceLink:{en:"source",es:"fuente",nl:"bron",pap:"fuente"},
+  regulatoryProductCol:{en:"Product default",es:"Predeterminado del producto",nl:"Productstandaard",pap:"Default di produkto"},
+  regulatoryNoLimit:{en:"No public-health limit found",es:"No se encontró límite de salud pública",nl:"Geen volksgezondheidslimiet gevonden",pap:"No a haña limite di salú públiko"}
 };
 
 var currentLang = "en";
@@ -403,8 +408,46 @@ function screenAdmin(){
     '<div class="wrap page">'+
       '<div class="page-head"><div><p class="eyebrow">'+t("navParamSets")+'</p><h1>'+t("adminTitle")+'</h1><p>'+t("adminSub")+'</p></div></div>'+
       groups.map(adminSetCard).join("")+
+      adminRegulatoryCard()+
       adminActivityCard()+
     '</div>';
+}
+// Regulatory reference (spec update, 2026-09-25) — a comparison-only display.
+// Deliberately reads REGULATORY_REFERENCE, never DEFAULT_PARAMS' own tiers as
+// input to anything — the health score and alerts are untouched by this card.
+function adminRegulatoryCard(){
+  var ref = REGULATORY_REFERENCE;
+  var rows = DEFAULT_PARAMS.filter(function(p){ return !!p.tiers; }).map(function(p){
+    var lim = ref.limits[p.key];
+    var good = p.tiers.filter(function(tr){ return tr.tier==="good"; })[0];
+    var goodUnitSuffix = p.unit ? " "+p.unit : "";
+    var productText = !good ? "—"
+      : (good.min!=null && good.max!=null) ? (good.min+"–"+good.max+goodUnitSuffix)
+      : (good.min!=null) ? ("≥"+good.min+goodUnitSuffix)
+      : ("≤"+good.max+goodUnitSuffix);
+    var regText, regNote;
+    if(!lim || (lim.min==null && lim.max==null)){
+      regText = t("regulatoryNoLimit"); regNote = lim ? lim.note : "";
+    } else {
+      var unitSuffix = p.unit ? " "+p.unit : "";
+      regText = (lim.min!=null && lim.max!=null) ? (lim.min+"–"+lim.max+unitSuffix)
+        : (lim.min!=null) ? ("≥"+lim.min+unitSuffix)
+        : ("≤"+lim.max+unitSuffix);
+      regNote = lim.note||"";
+    }
+    return '<div class="param-row">'+
+      '<div class="param-name">'+pLabel(p.key)+'</div>'+
+      '<div class="subtle">'+t("regulatoryProductCol")+': <b style="color:var(--ink)">'+esc(productText)+'</b></div>'+
+      '<div class="param-val" style="text-align:left">'+esc(regText)+'</div>'+
+      '<div class="param-tier-caption" style="grid-column:1/-1">'+esc(regNote)+'</div>'+
+    '</div>';
+  }).join("");
+  return '<div class="card" style="margin-bottom:16px">'+
+    '<div class="card-head"><div><h2>'+t("regulatoryTitle")+(ref.isPlaceholder?' <span class="beta-chip">'+t("regulatoryPlaceholderChip")+'</span>':'')+'</h2>'+
+      '<p class="card-desc" style="margin:4px 0 0">'+esc(ref.sourceName)+(ref.sourceUrl?' — <a href="'+esc(ref.sourceUrl)+'" target="_blank" rel="noopener" style="color:var(--accent)">'+t("regulatorySourceLink")+'</a>':'')+'</p>'+
+    '</div></div>'+
+    rows+
+  '</div>';
 }
 // Audit trail (spec update, 2026-09-25) — the sensor ingestion function is
 // currently the only write path that runs without a human, so this is what
